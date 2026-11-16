@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}[hidden]{display:none!important}</style>
+<title>양의 내집마련 런</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: one full-height game stage (max 560px wide), canvas behind, DOM HUD on top, start/result panels as overlays. Deliberate single night-city look. */
+:root{
+  --night:#0f1830;
+  --sky:#1d2c55;
+  --panel:rgba(13,20,40,0.88);
+  --wool:#f7f4ee;
+  --gold:#f4c35a;
+  --coral:#f2795b;
+  --mint:#8fd3b0;
+  --text:#ffffff;
+  --muted:#c3cbe0;
+  --display:'Jua','Noto Sans KR',system-ui,sans-serif;
+  --body:'Noto Sans KR',system-ui,-apple-system,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--night);color:var(--text);font-family:var(--body);overflow:hidden;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+.stage{position:relative;height:100%;max-width:560px;margin:0 auto;overflow:hidden;background:var(--sky)}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+
+.hud{position:absolute;top:0;left:0;right:0;display:flex;flex-direction:column;gap:8px;padding-top:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));pointer-events:none}
+.hud-row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.hearts{display:flex;gap:4px}
+.hearts svg{width:24px;height:24px;transition:opacity .2s,transform .2s}
+.hearts svg.off{opacity:.25;transform:scale(.85)}
+.money{font-family:var(--display);font-size:22px;color:var(--gold);font-variant-numeric:tabular-nums;text-shadow:0 2px 0 rgba(0,0,0,.35)}
+.goal{display:flex;align-items:center;gap:8px}
+.bar{flex:1;height:10px;border-radius:999px;background:rgba(255,255,255,.16);overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--gold);border-radius:999px;transition:width .15s}
+.goal-label{font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap}
+
+.screen{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:rgba(15,24,48,.45)}
+.panel{width:100%;max-width:400px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;background:var(--panel);border:1px solid rgba(255,255,255,.12);border-radius:24px;padding:28px 22px}
+.brand{margin:0;font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--gold)}
+h1,h2{margin:0;font-family:var(--display);font-weight:400;text-wrap:balance;line-height:1.15}
+h1{font-size:44px}
+h1 em{font-style:normal;color:var(--gold)}
+h2{font-size:38px;color:var(--gold)}
+.lead{margin:0;font-size:16px;line-height:1.6;color:var(--text)}
+.lead strong{color:var(--gold)}
+.rules{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;width:100%;text-align:left}
+.rules li{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:14px;line-height:1.5;color:var(--muted);background:rgba(255,255,255,.05);border-radius:12px;padding:8px 12px}
+.key{font-family:var(--display);font-size:13px;color:#14213d;background:var(--wool);border-radius:6px;padding:1px 8px}
+.ic{display:inline-block;width:16px;height:16px;flex:none}
+.ic.coin{border-radius:50%;background:var(--gold);box-shadow:inset 0 0 0 3px #d39b2a}
+.ic.star{background:var(--gold);clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
+.ic.tax{border-radius:4px;background:var(--coral)}
+.btn{font-family:var(--display);font-size:22px;color:#14213d;background:var(--gold);border:0;border-radius:16px;min-height:56px;width:100%;cursor:pointer;box-shadow:0 4px 0 #b9862a;transition:transform .08s,box-shadow .08s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #b9862a}
+.btn:focus-visible{outline:3px solid var(--wool);outline-offset:3px}
+.best{margin:0;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.eyebrow{margin:0;font-size:15px;font-weight:700;color:var(--mint)}
+.eyebrow.lose{color:var(--coral)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;margin:0}
+.stats div{background:rgba(255,255,255,.06);border-radius:14px;padding:10px 8px}
+.stats dt{font-size:12px;color:var(--muted)}
+.stats dd{margin:4px 0 0;font-family:var(--display);font-size:20px;font-variant-numeric:tabular-nums}
+.term{width:100%;text-align:left;border:1px dashed rgba(244,195,90,.5);border-radius:14px;padding:12px 14px}
+.term p{margin:0}
+.term-label{font-size:12px;font-weight:700;color:var(--gold);letter-spacing:.04em}
+.term-name{margin-top:4px!important;font-family:var(--display);font-size:20px}
+.term-desc{margin-top:4px!important;font-size:14px;line-height:1.6;color:var(--muted)}
+.show{margin:0;font-size:15px;font-weight:700}
+.promo{margin:0;font-size:13px;line-height:1.6;color:var(--muted)}
+.promo strong{color:var(--text)}
+@media (max-height:640px){h1{font-size:36px}h2{font-size:30px}.panel{gap:10px;padding:20px 18px}}
+@media (prefers-reduced-motion:reduce){.bar i,.hearts svg,.btn{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <canvas id="game" aria-label="양이 달리며 코인을 모으는 게임 화면" role="img"></canvas>
+
+  <div class="hud" id="hud" hidden>
+    <div class="hud-row">
+      <div class="hearts" id="hearts" aria-label="남은 하트"></div>
+      <div class="money" id="money" aria-live="off">0원</div>
+    </div>
+    <div class="goal">
+      <div class="bar"><i id="bar"></i></div>
+      <span class="goal-label">목표 5억</span>
+    </div>
+  </div>
+
+  <section class="screen" id="startScreen">
+    <div class="panel">
+      <p class="brand">내집마련 A to Z</p>
+      <h1>양의 <em>내집마련</em> 런</h1>
+      <p class="lead">계약금 코인을 모아 <strong>5억</strong>을 채우면<br>내 집에 도착해요.</p>
+      <ul class="rules">
+        <li><span class="key">탭</span> 점프 · 공중에서 한 번 더 탭하면 2단 점프</li>
+        <li><span class="ic coin"></span> 계약금 +1,000만원 <span class="ic star"></span> 청약 당첨 +5,000만원</li>
+        <li><span class="ic tax"></span> 세금 상자·금리↑ 간판에 부딪히면 하트 −1</li>
+      </ul>
+      <button class="btn" id="startBtn" type="button">시작하기</button>
+      <p class="best" id="bestStart"></p>
+    </div>
+  </section>
+
+  <section class="screen" id="endScreen" hidden>
+    <div class="panel">
+      <p class="eyebrow" id="endEyebrow"></p>
+      <h2 id="endTitle"></h2>
+      <dl class="stats">
+        <div><dt>모은 돈</dt><dd id="endMoney"></dd></div>
+        <div><dt>내 최고 기록</dt><dd id="endBest"></dd></div>
+      </dl>
+      <div class="term">
+        <p class="term-label">오늘의 부동산 용어</p>
+        <p class="term-name" id="termName"></p>
+        <p class="term-desc" id="termDesc"></p>
+      </div>
+      <p class="show">이 화면을 부스에 보여 주세요!</p>
+      <button class="btn" id="againBtn" type="button">다시 하기</button>
+      <p class="promo">재개발·재건축 지도부터 세금·대출 계산까지<br><strong>내집마련 A to Z</strong></p>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var GOAL = 50000; // 만원 = 5억
+  var GRAV = 2600, JUMP1 = -900, JUMP2 = -780;
+  var stage = document.getElementById('stage');
+  var cvs = document.getElementById('game');
+  var ctx = cvs.getContext('2d');
+  var hud = document.getElementById('hud');
+  var heartsEl = document.getElementById('hearts');
+  var moneyEl = document.getElementById('money');
+  var barEl = document.getElementById('bar');
+  var startScreen = document.getElementById('startScreen');
+  var endScreen = document.getElementById('endScreen');
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var H = 600, W = 400, GY = 480, scale = 1, SX = 88;
+
+  var TERMS = [
+    ['LTV', '집값 대비 빌릴 수 있는 대출 금액의 비율이에요. LTV 70%라면 5억 집에 최대 3억 5,000만원까지 빌릴 수 있어요.'],
+    ['DSR', '1년 동안 갚는 모든 대출의 원금과 이자가 연 소득에서 차지하는 비율이에요. 이 비율이 넘으면 대출이 줄어요.'],
+    ['취득세', '집을 살 때 한 번 내는 세금이에요. 집값과 이미 가진 주택 수에 따라 세율이 달라져요.'],
+    ['보유세', '집을 가지고 있는 동안 매년 내는 재산세와 종합부동산세를 함께 부르는 말이에요.'],
+    ['양도세', '집을 팔아서 생긴 차익에 매기는 세금이에요. 1세대 1주택은 조건을 채우면 비과세될 수 있어요.'],
+    ['재건축과 재개발', '재건축은 낡은 아파트 같은 주택을 다시 짓는 사업이고, 재개발은 도로·상하수도 같은 기반시설까지 낙후된 지역 전체를 정비하는 사업이에요.'],
+    ['조합설립인가', '집주인들이 조합을 만들어 정비사업의 주체로 인정받는 단계예요.'],
+    ['관리처분인가', '조합원 분담금과 새 집 배정 계획을 확정하는 단계예요. 이 단계가 지나면 이주와 철거가 시작돼요.']
+  ];
+
+  function rand(a,b){ return a + Math.random()*(b-a); }
+  function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+  function fmtMoney(m){
+    if (m <= 0) return '0원';
+    if (m >= 10000){
+      var e = Math.floor(m/10000), r = m % 10000;
+      return r ? e + '억 ' + r.toLocaleString('ko-KR') + '만원' : e + '억원';
+    }
+    return m.toLocaleString('ko-KR') + '만원';
+  }
+  function titleFor(m){
+    if (m >= GOAL) return '내집마련 성공한 양';
+    if (m >= 35000) return '내집마련 직전 양';
+    if (m >= 20000) return '청약 준비하는 양';
+    if (m >= 10000) return '전세 찾는 양';
+    return '월세 사는 양';
+  }
+  function loadBest(){ try { return parseInt(localStorage.getItem('naejip-run-best') || '0', 10) || 0; } catch(e){ return 0; } }
+  function saveBest(v){ try { localStorage.setItem('naejip-run-best', String(v)); } catch(e){} }
+  var best = loadBest();
+  function showBestStart(){
+    document.getElementById('bestStart').textContent = best > 0 ? '내 최고 기록 ' + fmtMoney(best) : '최대한 많이 모아 보세요!';
+  }
+  showBestStart();
+
+  /* ---------- city background ---------- */
+  var SPAN = 1600;
+  function makeLayer(minH, maxH, crane){
+    var list = [], x = 0;
+    while (x < SPAN){
+      var w = Math.round(rand(44, 96)), h = Math.round(rand(minH, maxH));
+      var cols = Math.max(1, Math.floor((w-10)/14)), rows = Math.max(1, Math.floor((h-14)/20));
+      var lit = [];
+      for (var i=0;i<cols*rows;i++) lit.push(Math.random() < 0.42);
+      list.push({x:x, w:w, h:h, cols:cols, rows:rows, lit:lit, crane: crane && Math.random() < 0.18});
+      x += w + Math.round(rand(6, 26));
+    }
+    return list;
+  }
+  var farLayer = makeLayer(120, 250, true);
+  var nearLayer = makeLayer(70, 170, false);
+  var stars = [];
+  for (var s=0;s<40;s++) stars.push({x:Math.random(), y:Math.random()*0.45, r:rand(0.6,1.6)});
+
+  /* ---------- state ---------- */
+  var mode = 'idle';
+  var sheep, world;
+  function reset(){
+    sheep = { y: GY, vy: 0, jumps: 0, inv: 0, t: 0 };
+    world = { speed: 330, time: 0, money: 0, hearts: 3, obs: [], items: [], fx: [], texts: [],
+              spawnIn: 520, itemIn: 0.8, farOff: 0, nearOff: 0, laneOff: 0, house: null, shake: 0 };
+    renderHearts(); renderMoney();
+  }
+  var farOff = 0, nearOff = 0, laneOff = 0;
+
+  function renderHearts(){
+    var html = '';
+    for (var i=0;i<3;i++){
+      html += '<svg viewBox="0 0 24 24" class="' + (i < world.hearts ? '' : 'off') + '" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.1 0 3.6 1.1 4.3 2.4.7-1.3 2.2-2.4 4.3-2.4 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21z" fill="#f2795b"/></svg>';
+    }
+    heartsEl.innerHTML = html;
+    heartsEl.setAttribute('aria-label', '남은 하트 ' + world.hearts + '개');
+  }
+  function renderMoney(){
+    moneyEl.textContent = fmtMoney(world.money);
+    barEl.style.width = Math.min(100, world.money/GOAL*100) + '%';
+  }
+
+  /* ---------- spawning ---------- */
+  function spawnObstacle(){
+    var r = Math.random();
+    if (r < 0.62){
+      var w = Math.round(rand(52, 68)), h = Math.round(rand(42, 66));
+      world.obs.push({ kind:'tax', x: W + 20, w: w, h: h, top: GY - h, label: pick(['취득세','보유세','양도세','종부세']) });
+    } else if (r < 0.82){
+      world.obs.push({ kind:'wide', x: W + 20, w: 112, h: 40, top: GY - 40, label: '대출규제' });
+    } else {
+      world.obs.push({ kind:'rate', x: W + 20, w: 76, h: 34, top: GY - 132, base: GY - 132, ph: Math.random()*6, label: '금리' });
+    }
+  }
+  function spawnItems(){
+    var x0 = W + 30, p = Math.random();
+    if (p < 0.08){
+      world.items.push({ kind:'star', x: x0, y: GY - rand(110, 160), r: 17 });
+      return;
+    }
+    if (p < 0.13 && world.hearts < 3){
+      world.items.push({ kind:'heart', x: x0, y: GY - rand(90, 150), r: 15 });
+      return;
+    }
+    var n, i;
+    if (p < 0.5){
+      n = 4;
+      for (i=0;i<n;i++) world.items.push({ kind:'coin', x: x0 + i*42, y: GY - 30, r: 13 });
+    } else if (p < 0.8){
+      n = 5;
+      for (i=0;i<n;i++) world.items.push({ kind:'coin', x: x0 + i*40, y: GY - 60 - Math.sin(i/(n-1)*Math.PI)*90, r: 13 });
+    } else {
+      n = 4;
+      for (i=0;i<n;i++) world.items.push({ kind:'coin', x: x0 + i*42, y: GY - 150, r: 13 });
+    }
+  }
+
+  /* ---------- effects ---------- */
+  function burst(x, y, colors, n, spd){
+    if (reduced) n = Math.ceil(n/3);
+    for (var i=0;i<n;i++){
+      var a = Math.random()*Math.PI*2, v = rand(spd*0.4, spd);
+      world.fx.push({ x:x, y:y, vx:Math.cos(a)*v, vy:Math.sin(a)*v - 120, life: rand(0.5, 0.9), max: 0.9, c: pick(colors), s: rand(3, 6) });
+    }
+  }
+  function floatText(x, y, txt, color){ world.texts.push({ x:x, y:y, txt:txt, c:color, life: 0.9 }); }
+
+  /* ---------- input ---------- */
+  function jump(){
+    if (mode !== 'play' && mode !== 'arrive') return;
+    if (sheep.jumps < 2){
+      sheep.vy = sheep.jumps === 0 ? JUMP1 : JUMP2;
+      sheep.jumps++;
+      burst(SX + 30, sheep.y, ['#f7f4ee'], 5, 120);
+    }
+  }
+  stage.addEventListener('pointerdown', function(e){
+    if (e.target.closest && e.target.closest('button')) return;
+    if (mode === 'play' || mode === 'arrive'){ e.preventDefault(); jump(); }
+  });
+  window.addEventListener('keydown', function(e){
+    if (mode !== 'play' && mode !== 'arrive') return;
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW'){ e.preventDefault(); jump(); }
+  });
+
+  document.getElementById('startBtn').addEventListener('click', start);
+  document.getElementById('againBtn').addEventListener('click', start);
+
+  function start(){
+    reset();
+    mode = 'play';
+    startScreen.hidden = true;
+    endScreen.hidden = true;
+    hud.hidden = false;
+  }
+
+  function end(win){
+    if (mode === 'over') return;
+    mode = 'over';
+    var m = world.money;
+    if (m > best){ best = m; saveBest(best); }
+    var eb = document.getElementById('endEyebrow');
+    eb.textContent = win ? '내집마련 성공!' : '하트를 모두 잃었어요';
+    eb.className = 'eyebrow' + (win ? '' : ' lose');
+    document.getElementById('endTitle').textContent = titleFor(m);
+    document.getElementById('endMoney').textContent = fmtMoney(m);
+    document.getElementById('endBest').textContent = fmtMoney(best);
+    var t = pick(TERMS);
+    document.getElementById('termName').textContent = t[0];
+    document.getElementById('termDesc').textContent = t[1];
+    showBestStart();
+    setTimeout(function(){ hud.hidden = true; endScreen.hidden = false; }, win ? 900 : 700);
+  }
+
+  /* ---------- update ---------- */
+  function hits(a, b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+  function update(dt){
+    sheep.t += dt;
+    if (mode === 'idle' || mode === 'over'){
+      var idleSpeed = mode === 'idle' ? 90 : 0;
+      farOff += idleSpeed*0.15*dt; nearOff += idleSpeed*0.4*dt; laneOff += idleSpeed*dt;
+      if (world) updateFx(dt);
+      return;
+    }
+
+    world.time += dt;
+    if (mode === 'play') world.speed = Math.min(640, 330 + world.time*6);
+    else world.speed = Math.max(220, world.speed - 320*dt);
+    var sp = world.speed;
+    farOff += sp*0.15*dt; nearOff += sp*0.4*dt; laneOff += sp*dt;
+
+    // sheep physics
+    sheep.vy += GRAV*dt;
+    sheep.y += sheep.vy*dt;
+    if (sheep.y >= GY){ sheep.y = GY; sheep.vy = 0; sheep.jumps = 0; }
+    if (sheep.inv > 0) sheep.inv -= dt;
+    if (world.shake > 0) world.shake -= dt;
+
+    if (mode === 'play'){
+      world.spawnIn -= sp*dt;
+      if (world.spawnIn <= 0){ spawnObstacle(); world.spawnIn = Math.max(300, sp*rand(1.0, 1.7)); }
+      world.itemIn -= dt;
+      if (world.itemIn <= 0){ spawnItems(); world.itemIn = rand(0.9, 1.6); }
+    }
+
+    var box = { x: SX + 8, y: sheep.y - 48, w: 50, h: 44 };
+    var i, o, it;
+    for (i = world.obs.length - 1; i >= 0; i--){
+      o = world.obs[i];
+      o.x -= sp*dt;
+      if (o.kind === 'rate'){ o.ph += dt*4; o.top = o.base + Math.sin(o.ph)*6; }
+      if (o.x + o.w < -20){ world.obs.splice(i,1); continue; }
+      if (mode === 'play' && sheep.inv <= 0 && hits(box, { x:o.x+4, y:o.top+4, w:o.w-8, h:o.h-6 })){
+        world.hearts--; sheep.inv = 1.3; world.shake = 0.25;
+        renderHearts();
+        burst(SX + 34, sheep.y - 30, ['#f2795b','#ffffff'], 14, 260);
+        floatText(SX + 34, sheep.y - 70, o.label + '!', '#f2795b');
+        if (navigator.vibrate){ try { navigator.vibrate(60); } catch(e){} }
+        if (world.hearts <= 0){ end(false); return; }
+      }
+    }
+    for (i = world.items.length - 1; i >= 0; i--){
+      it = world.items[i];
+      it.x -= sp*dt;
+      if (it.x < -30){ world.items.splice(i,1); continue; }
+      if (hits(box, { x: it.x - it.r, y: it.y - it.r, w: it.r*2, h: it.r*2 })){
+        world.items.splice(i,1);
+        if (it.kind === 'coin'){ world.money += 1000; floatText(it.x, it.y - 18, '+1,000만', '#f4c35a'); burst(it.x, it.y, ['#f4c35a'], 6, 160); }
+        else if (it.kind === 'star'){ world.money += 5000; floatText(it.x, it.y - 22, '청약 당첨! +5,000만', '#f4c35a'); burst(it.x, it.y, ['#f4c35a','#ffffff','#8fd3b0'], 18, 280); }
+        else if (it.kind === 'heart'){ world.hearts = Math.min(3, world.hearts + 1); renderHearts(); floatText(it.x, it.y - 20, '대출 승인! ♥+1', '#8fd3b0'); burst(it.x, it.y, ['#f2795b','#ffffff'], 10, 200); }
+        renderMoney();
+      }
+    }
+
+    if (mode === 'play' && world.money >= GOAL){
+      mode = 'arrive';
+      for (i=0;i<world.obs.length;i++){ o = world.obs[i]; burst(o.x + o.w/2, o.top + o.h/2, ['#f7f4ee','#c3cbe0'], 8, 180); }
+      world.obs = [];
+      world.house = { x: W + 30 };
+      floatText(SX + 40, sheep.y - 90, '목표 달성! 내 집으로!', '#8fd3b0');
+    }
+    if (mode === 'arrive' && world.house){
+      world.house.x -= sp*dt;
+      if (world.house.x + 66 <= SX + 36){
+        burst(world.house.x + 66, GY - 60, ['#f4c35a','#8fd3b0','#f7f4ee','#f2795b'], 40, 360);
+        end(true);
+      }
+    }
+    updateFx(dt);
+  }
+  function updateFx(dt){
+    var i, f, t;
+    for (i = world.fx.length - 1; i >= 0; i--){
+      f = world.fx[i]; f.life -= dt;
+      if (f.life <= 0){ world.fx.splice(i,1); continue; }
+      f.vy += 900*dt; f.x += f.vx*dt; f.y += f.vy*dt;
+    }
+    for (i = world.texts.length - 1; i >= 0; i--){
+      t = world.texts[i]; t.life -= dt; t.y -= 50*dt;
+      if (t.life <= 0) world.texts.splice(i,1);
+    }
+  }
+
+  /* ---------- drawing ---------- */
+  function roundRect(x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  function drawLayer(layer, off, bodyColor, winColor, groundY){
+    var o = off % SPAN, k, b, i, x;
+    for (k = 0; k * SPAN - o < W + SPAN; k++){
+      for (i = 0; i < layer.length; i++){
+        b = layer[i];
+        x = b.x + k*SPAN - o;
+        if (x > W || x + b.w < 0) continue;
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(x, groundY - b.h, b.w, b.h);
+        ctx.fillStyle = winColor;
+        for (var r = 0; r < b.rows; r++){
+          for (var c = 0; c < b.cols; c++){
+            if (b.lit[r*b.cols + c]) ctx.fillRect(x + 7 + c*14, groundY - b.h + 10 + r*20, 6, 9);
+          }
+        }
+        if (b.crane){
+          ctx.strokeStyle = bodyColor; ctx.lineWidth = 3;
+          var cx = x + b.w/2, top = groundY - b.h - 70;
+          ctx.beginPath();
+          ctx.moveTo(cx, groundY - b.h); ctx.lineTo(cx, top);
+          ctx.moveTo(cx - 30, top + 6); ctx.lineTo(cx + 70, top + 6);
+          ctx.moveTo(cx + 60, top + 6); ctx.lineTo(cx + 60, top + 36);
+          ctx.stroke();
+          ctx.fillStyle = '#f4c35a';
+          ctx.fillRect(cx + 54, top + 36, 12, 8);
+        }
+      }
+    }
+  }
+  function drawSheep(x, yb, t, air, alpha){
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, yb);
+    var ph = Math.sin(t*18);
+    ctx.fillStyle = '#3e3431';
+    var legs = [12, 22, 38, 48];
+    for (var i=0;i<4;i++){
+      var dy = air ? -4 : (i % 2 ? ph : -ph)*4;
+      roundRect(legs[i], -16 + Math.min(0, dy), 7, 16 - Math.abs(Math.min(0,dy)) + (air ? -4 : 0), 3);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#f7f4ee';
+    var wool = [[16,-30,13],[28,-38,15],[42,-31,13],[22,-20,12],[38,-20,12],[30,-27,15],[8,-24,9]];
+    for (i=0;i<wool.length;i++){ ctx.beginPath(); ctx.arc(wool[i][0], wool[i][1], wool[i][2], 0, Math.PI*2); ctx.fill(); }
+    // gold house badge
+    ctx.fillStyle = '#f4c35a';
+    ctx.beginPath(); ctx.moveTo(23,-24); ctx.lineTo(30,-31); ctx.lineTo(37,-24); ctx.lineTo(37,-16); ctx.lineTo(23,-16); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#1d2c55'; ctx.fillRect(28.5,-21,3,5);
+    // head
+    ctx.fillStyle = '#3e3431';
+    ctx.beginPath(); ctx.ellipse(46, -42, 6, 3.5, -0.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(55, -36, 11, 12, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#f7f4ee';
+    ctx.beginPath(); ctx.arc(50,-48,6,0,Math.PI*2); ctx.arc(57,-50,6,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(59,-38,3.4,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#1a1412'; ctx.beginPath(); ctx.arc(60,-37.5,1.8,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(233,138,138,0.75)'; ctx.beginPath(); ctx.arc(57,-30,2.6,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  function drawObstacle(o){
+    ctx.save();
+    if (o.kind === 'rate'){
+      ctx.fillStyle = '#e8564a';
+      roundRect(o.x, o.top, o.w, o.h, 10); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.moveTo(o.x + 58, o.top + 9); ctx.lineTo(o.x + 66, o.top + 19); ctx.lineTo(o.x + 50, o.top + 19); ctx.closePath(); ctx.fill();
+      ctx.fillRect(o.x + 55.5, o.top + 18, 5, 8);
+      ctx.font = '700 15px "Noto Sans KR", sans-serif';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText('금리', o.x + 12, o.top + o.h/2 + 1);
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(o.x + o.w/2, o.top); ctx.lineTo(o.x + o.w/2, o.top - 18); ctx.stroke();
+    } else {
+      ctx.fillStyle = o.kind === 'wide' ? '#c9503f' : '#f2795b';
+      roundRect(o.x, o.top, o.w, o.h, 8); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.14)';
+      ctx.fillRect(o.x, o.top + o.h - 8, o.w, 8);
+      if (o.kind === 'wide'){
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        for (var s = 0; s < o.w; s += 22){ ctx.fillRect(o.x + s + 4, o.top + 4, 10, o.h - 14); }
+      }
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 14px "Noto Sans KR", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(o.label, o.x + o.w/2, o.top + (o.h - 8)/2 + 1);
+    }
+    ctx.restore();
+  }
+  function drawItem(it){
+    var bob = Math.sin(sheep.t*5 + it.x*0.02)*3;
+    var y = it.y + bob;
+    ctx.save();
+    if (it.kind === 'coin'){
+      ctx.fillStyle = '#d39b2a'; ctx.beginPath(); ctx.arc(it.x, y, it.r, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#f4c35a'; ctx.beginPath(); ctx.arc(it.x, y, it.r - 3, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#9a6a12'; ctx.font = '700 13px "Noto Sans KR", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('₩', it.x, y + 1);
+    } else if (it.kind === 'star'){
+      ctx.translate(it.x, y); ctx.rotate(Math.sin(sheep.t*3)*0.2);
+      ctx.fillStyle = '#f4c35a'; ctx.beginPath();
+      for (var i=0;i<10;i++){ var rr = i%2 ? it.r*0.45 : it.r; var a = -Math.PI/2 + i*Math.PI/5; ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); }
+      ctx.closePath(); ctx.fill();
+      ctx.rotate(-Math.sin(sheep.t*3)*0.2);
+      ctx.fillStyle = '#ffffff'; ctx.font = '700 11px "Noto Sans KR", sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText('청약', 0, it.r + 13);
+    } else {
+      ctx.translate(it.x, y); ctx.fillStyle = '#f2795b';
+      ctx.beginPath(); ctx.moveTo(0, 10);
+      ctx.bezierCurveTo(-16, -2, -8, -16, 0, -7);
+      ctx.bezierCurveTo(8, -16, 16, -2, 0, 10);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.font = '700 11px "Noto Sans KR", sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText('대출', 0, 26);
+    }
+    ctx.restore();
+  }
+  function drawHouse(hx){
+    ctx.save();
+    var w = 132, h = 96, top = GY - h;
+    ctx.fillStyle = 'rgba(244,195,90,0.18)';
+    ctx.beginPath(); ctx.arc(hx + w/2, top + 30, 110, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#f7f4ee'; ctx.fillRect(hx, top, w, h);
+    ctx.fillStyle = '#f4c35a';
+    ctx.beginPath(); ctx.moveTo(hx - 14, top + 4); ctx.lineTo(hx + w/2, top - 50); ctx.lineTo(hx + w + 14, top + 4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#1d2c55'; roundRect(hx + 50, top + 40, 32, 56, 4); ctx.fill();
+    ctx.fillStyle = '#8fd3b0'; ctx.fillRect(hx + 14, top + 24, 24, 22); ctx.fillRect(hx + w - 38, top + 24, 24, 22);
+    ctx.fillStyle = '#1d2c55'; ctx.font = '400 18px "Jua", "Noto Sans KR", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('내 집', hx + w/2, top - 14);
+    ctx.restore();
+  }
+
+  function draw(){
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    var shake = world && world.shake > 0 && !reduced ? world.shake*16 : 0;
+    if (shake) ctx.translate(rand(-shake, shake), rand(-shake, shake));
+
+    var g = ctx.createLinearGradient(0, 0, 0, GY);
+    g.addColorStop(0, '#0d1530'); g.addColorStop(1, '#2e4278');
+    ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, GY + 20);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    for (var i=0;i<stars.length;i++){ ctx.beginPath(); ctx.arc(stars[i].x*W, stars[i].y*H, stars[i].r, 0, Math.PI*2); ctx.fill(); }
+    ctx.fillStyle = '#f6e3b0'; ctx.beginPath(); ctx.arc(W - 70, 120, 26, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#0d1530'; ctx.globalAlpha = 0.0; ctx.globalAlpha = 1;
+
+    drawLayer(farLayer, farOff, '#26386a', 'rgba(244,195,90,0.35)', GY);
+    drawLayer(nearLayer, nearOff, '#17234a', 'rgba(244,195,90,0.75)', GY);
+
+    // road
+    ctx.fillStyle = '#262c3a'; ctx.fillRect(-20, GY, W + 40, H - GY + 20);
+    ctx.fillStyle = '#3d4559'; ctx.fillRect(-20, GY, W + 40, 6);
+    ctx.fillStyle = 'rgba(244,195,90,0.55)';
+    var lo = laneOff % 80;
+    for (var x = -lo; x < W; x += 80) ctx.fillRect(x, GY + 52, 40, 5);
+
+    if (!world){ drawSheep(SX, GY, sheep ? sheep.t : 0, false, 1); return; }
+
+    if (world.house) drawHouse(world.house.x);
+    for (i=0;i<world.items.length;i++) drawItem(world.items[i]);
+    for (i=0;i<world.obs.length;i++) drawObstacle(world.obs[i]);
+
+    // shadow
+    var air = sheep.y < GY - 1;
+    var sh = Math.max(0.3, 1 - (GY - sheep.y)/220);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath(); ctx.ellipse(SX + 34, GY + 3, 28*sh, 5*sh, 0, 0, Math.PI*2); ctx.fill();
+    var blink = sheep.inv > 0 ? (Math.floor(sheep.inv*12) % 2 ? 0.35 : 1) : 1;
+    var hide = mode === 'over' && world.house && world.money >= GOAL;
+    if (!hide) drawSheep(SX, sheep.y, sheep.t, air, blink);
+
+    for (i=0;i<world.fx.length;i++){
+      var f = world.fx[i];
+      ctx.globalAlpha = Math.max(0, f.life/f.max);
+      ctx.fillStyle = f.c; ctx.fillRect(f.x, f.y, f.s, f.s);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '400 20px "Jua", "Noto Sans KR", sans-serif';
+    for (i=0;i<world.texts.length;i++){
+      var t = world.texts[i];
+      ctx.globalAlpha = Math.min(1, t.life*2);
+      ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillText(t.txt, t.x + 1, t.y + 2);
+      ctx.fillStyle = t.c; ctx.fillText(t.txt, t.x, t.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* ---------- sizing + loop ---------- */
+  function resize(){
+    var r = stage.getBoundingClientRect();
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cvs.width = Math.max(1, Math.round(r.width*dpr));
+    cvs.height = Math.max(1, Math.round(r.height*dpr));
+    scale = cvs.height / H;
+    W = cvs.width / scale;
+    GY = Math.round(H*0.8);
+    SX = Math.max(40, Math.min(110, W*0.18));
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  reset();
+
+  var last = performance.now();
+  document.addEventListener('visibilitychange', function(){ last = performance.now(); });
+  function frame(now){
+    var dt = Math.min(0.033, (now - last)/1000);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
